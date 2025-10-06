@@ -20,15 +20,24 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  SERVICE_CONNECTION: 'terraform-aks-azurerm-svc-con'
-  TERRAFORM_VERSION: '1.7.4'
-  BACKEND_RG: 'terraform-storage-rg'
-  BACKEND_STORAGE: 'terraformstatexlrwdrzs'
-  BACKEND_CONTAINER: 'tfstatefiles'
-  DEV_ENVIRONMENT: 'dev'
-  QA_ENVIRONMENT: 'qa'
-  PROD_ENVIRONMENT: 'prod'
-  TF_WORKDIR: 'terraform-manifests'
+  - name: SERVICE_CONNECTION
+    value: 'terraform-aks-azurerm-svc-con'
+  - name: TERRAFORM_VERSION
+    value: '1.7.4'
+  - name: BACKEND_RG
+    value: 'terraform-storage-rg'
+  - name: BACKEND_STORAGE
+    value: 'terraformstatexlrwdrzs'
+  - name: BACKEND_CONTAINER
+    value: 'tfstatefiles'
+  - name: DEV_ENVIRONMENT
+    value: 'dev'
+  - name: QA_ENVIRONMENT
+    value: 'qa'
+  - name: PROD_ENVIRONMENT
+    value: 'prod'
+  - name: TF_WORKDIR
+    value: 'terraform-manifests'
 
 stages:
 
@@ -51,7 +60,9 @@ stages:
             script: |
               mkdir -p $(Pipeline.Workspace)/ssh-keys
               ssh-keygen -t rsa -b 4096 -f $(Pipeline.Workspace)/ssh-keys/aks-ssh-key -N '' -C "aks-terraform-$(Build.BuildId)"
-              echo "##vso[task.setvariable variable=SSH_PUBLIC_KEY;isOutput=true]$(cat $(Pipeline.Workspace)/ssh-keys/aks-ssh-key.pub)"
+              # Write public key to file for later use
+              cat $(Pipeline.Workspace)/ssh-keys/aks-ssh-key.pub > $(Pipeline.Workspace)/ssh-public-key.txt
+      
         
         - task: PublishBuildArtifacts@1
           displayName: 'Publish SSH Private Key (Secure)'
@@ -151,7 +162,7 @@ stages:
                   commandOptions: >-
                     -var="environment=$(DEV_ENVIRONMENT)"
                     -var="cluster_name=aks-$(DEV_ENVIRONMENT)-$(Build.BuildId)"
-                    -var="ssh_public_key=$(SSH_PUBLIC_KEY_CONTENT)"
+                    -var="ssh_public_key=$(cat $(Pipeline.Workspace)/ssh-private-key/aks-ssh-key.pub)"
                     -out=tfplan.$(DEV_ENVIRONMENT).tfplan
 
               - task: TerraformCLI@0
@@ -291,3 +302,4 @@ stages:
                   workingDirectory: '$(Pipeline.Workspace)/terraform-manifests'
                   environmentServiceName: '$(SERVICE_CONNECTION)'
                   commandOptions: '-auto-approve tfplan.$(PROD_ENVIRONMENT).tfplan'
+
