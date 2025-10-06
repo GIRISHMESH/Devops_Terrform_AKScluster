@@ -1,3 +1,4 @@
+
 variable "location" {
   type        = string
   description = "Azure Region for resource deployment"
@@ -35,5 +36,16 @@ variable "windows_admin_password" {
   description = "Windows admin password (recommend Key Vault in production)"  
   default     = "P@ssw0rd1234"
 }
+
+
+
+variable "environment" {}
+backend "azurerm" {
+  resource_group_name  = "terraform-storage-rg"
+  storage_account_name = "terraformstatexlrwdrzs"
+  container_name       = "tfstatefiles"
+  key                  = "aks-${var.environment}.tfstate"
+}
+
 
 
