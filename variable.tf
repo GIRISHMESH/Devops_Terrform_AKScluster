@@ -39,13 +39,8 @@ variable "windows_admin_password" {
 
 
 
-variable "environment" {}
-backend "azurerm" {
-  resource_group_name  = "terraform-storage-rg"
-  storage_account_name = "terraformstatexlrwdrzs"
-  container_name       = "tfstatefiles"
-  key                  = "aks-${var.environment}.tfstate"
-}
+
+
 
 
 
