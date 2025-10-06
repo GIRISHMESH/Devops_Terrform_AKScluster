@@ -7,15 +7,17 @@ required_providers {
     random  = { source = "hashicorp/random", version = "~> 3.0" }
   }
   
-#  backend "azurerm" {
- #   resource_group_name  = "terraform-storage-rg"
- #   storage_account_name = "terraformstatexlrwdrzs"
-  #  container_name       = "tfstatefiles"
-  #  key                  = "dev.terraform.tfstate"
- # }
+backend "azurerm" {
+  resource_group_name  = "terraform-storage-rg"
+  storage_account_name = "terraformstatexlrwdrzs"
+  container_name       = "tfstatefiles"
+  key                  = "aks-${var.environment}.tfstate"
+}
+
 }
 
 provider "azurerm" {
   features {}
 }
+
 
