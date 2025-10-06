@@ -1,0 +1,314 @@
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+  paths:
+    include:
+      - terraform-manifests/*
+
+pr:   #### Pull  request
+  branches:
+    include:
+      - main
+      - develop
+  paths:
+    include:
+      - terraform-manifests/*
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+
+
+
+variables:
+  - name: SERVICE_CONNECTION  ## Azure service connection (SPN) used by Terraform, AzureCLI, KeyVault tasks.
+    value: 'terraform-aks-azurerm-svc-con'    # <-- centralize
+  - name: TERRAFORM_VERSION
+    value: '1.7.4'
+  - name: BACKEND_RG
+    value: 'terraform-storage-rg'
+  - name: BACKEND_STORAGE
+    value: 'terraformstatexlrwdrzs'
+  - name: BACKEND_CONTAINER
+    value: 'tfstatefiles'
+  - name: DEV_ENVIRONMENT
+    value: 'dev'
+  - name: QA_ENVIRONMENT
+    value: 'qa'
+  - name: TF_WORKDIR
+    value: 'terraform-manifests'
+
+stages:
+
+# ---------------------------
+# Stage 1: Validate & Security
+# ---------------------------
+- stage: Validate
+  displayName: '🔍 Validate & Security Scan'
+  jobs:
+  - job: ValidateTerraform
+    displayName: 'Terraform Validation'
+    steps:
+    - checkout: self
+      persistCredentials: true
+
+    - task: TerraformInstaller@0
+      displayName: 'Install Terraform $(TERRAFORM_VERSION)'
+      inputs:
+        terraformVersion: '$(TERRAFORM_VERSION)'
+
+    # Format check
+    - task: Bash@3
+      displayName: 'Terraform fmt (check)'
+      inputs:
+        targetType: 'inline'
+        script: |
+          cd $(System.DefaultWorkingDirectory)/$(TF_WORKDIR)
+          terraform fmt -check -recursive
+
+    # Init so validate & plan work
+    - task: TerraformCLI@0
+      displayName: 'Terraform Init'
+      inputs:
+        command: 'init'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/$(TF_WORKDIR)'
+        backendType: 'azurerm'
+        backendServiceArm: '$(SERVICE_CONNECTION)'
+        backendAzureRmResourceGroupName: '$(BACKEND_RG)'
+        backendAzureRmStorageAccountName: '$(BACKEND_STORAGE)'
+        backendAzureRmContainerName: '$(BACKEND_CONTAINER)'
+        backendAzureRmKey: 'validation-aks.tfstate'
+
+    - task: TerraformCLI@0
+      displayName: 'Terraform Validate'
+      inputs:
+        command: 'validate'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/$(TF_WORKDIR)'
+
+    # Static analysis / security scanning (optional but recommended)
+###Installs and runs tfsec (a Terraform static security scanner). This detects security misconfigurations in the IaC    
+- task: Bash@3
+      displayName: 'Run tfsec (optional)'
+      inputs:
+        targetType: 'inline'
+        script: |
+          cd $(System.DefaultWorkingDirectory)/$(TF_WORKDIR)
+          # install tfsec if missing - minimal installer; adapt for enterprise policies
+          if ! command -v tfsec >/dev/null 2>&1; then
+            curl -sSL https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+          fi
+          tfsec .
+
+    # Plan -> save binary plan file
+    - task: TerraformCLI@0
+      displayName: 'Terraform Plan (create binary)'
+      inputs:
+        command: 'plan'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/$(TF_WORKDIR)'
+        environmentServiceName: '$(SERVICE_CONNECTION)'
+        commandOptions: >-
+          -lock=false
+          -out=tfplan.validation.binary
+
+    # Convert plan to JSON for policy engines / scan tools
+    - task: Bash@3
+      displayName: 'Export plan JSON'
+      inputs:
+        targetType: 'inline'
+        script: |
+          cd $(System.DefaultWorkingDirectory)/$(TF_WORKDIR)
+          terraform show -json tfplan.validation.binary > tfplan.validation.json
+
+#### Terraform artifacts, the output of terraform plan that the next stage (Dev/QA deploy) uses to apply changes safely, not application code.
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Plan Artifacts'
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/$(TF_WORKDIR)/'
+        ArtifactName: 'terraform-plan-artifacts'
+        publishLocation: 'Container'
+
+# ---------------------------
+# Stage 2: Deploy to Dev
+# ---------------------------
+- stage: DeployDev
+  displayName: '🚀 Deploy to Development'
+  dependsOn: Validate
+  condition: succeeded()
+  jobs:
+  - deployment: DeployDevAKS
+    displayName: 'Deploy Dev AKS Cluster'
+    environment:
+      name: 'dev'            # configure approvals/checks for this env in Azure DevOps UI if needed
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: 'terraform-plan-artifacts'
+
+          - task: TerraformInstaller@0
+            displayName: 'Install Terraform $(TERRAFORM_VERSION)'
+            inputs:
+              terraformVersion: '$(TERRAFORM_VERSION)'
+
+          - task: AzureKeyVault@1
+            displayName: 'Get secrets from Key Vault'
+            inputs:
+              azureSubscription: '$(SERVICE_CONNECTION)'
+              KeyVaultName: 'aks-keyvault-secrets'
+              SecretsFilter: 'aks-ssh-public-key'   # will be exposed as pipeline variables
+
+          - task: TerraformCLI@0
+            displayName: 'Terraform Init - Dev'
+            inputs:
+              command: 'init'
+              workingDirectory: '$(Pipeline.Workspace)/$(TF_WORKDIR)'
+              backendType: 'azurerm'
+              backendServiceArm: '$(SERVICE_CONNECTION)'
+              backendAzureRmResourceGroupName: '$(BACKEND_RG)'
+              backendAzureRmStorageAccountName: '$(BACKEND_STORAGE)'
+              backendAzureRmContainerName: '$(BACKEND_CONTAINER)'
+              backendAzureRmKey: 'aks-$(DEV_ENVIRONMENT).tfstate'
+
+          - task: TerraformCLI@0
+            displayName: 'Terraform Plan - Dev (create binary)'
+            inputs:
+              command: 'plan'
+              workingDirectory: '$(Pipeline.Workspace)/$(TF_WORKDIR)'
+              environmentServiceName: '$(SERVICE_CONNECTION)'
+              commandOptions: >-
+                -var="environment=$(DEV_ENVIRONMENT)"
+                -var="cluster_name=aks-$(DEV_ENVIRONMENT)-$(Build.BuildId)"
+                -out=tfplan.$(DEV_ENVIRONMENT).binary
+
+          - task: TerraformCLI@0
+            displayName: 'Terraform Apply - Dev (use plan file)'
+            inputs:
+              command: 'apply'
+              workingDirectory: '$(Pipeline.Workspace)/$(TF_WORKDIR)'
+              environmentServiceName: '$(SERVICE_CONNECTION)'
+              commandOptions: '-auto-approve tfplan.$(DEV_ENVIRONMENT).binary'## Note: -auto-approve is convenient for dev but avoid for production.
+
+          # Retrieve kubeconfig using AzureCLI (runs under service connection)
+          - task: AzureCLI@2
+            displayName: 'Get AKS kubeconfig and save to workspace'
+            inputs:
+              azureSubscription: '$(SERVICE_CONNECTION)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                # Replace these outputs/variables with what your terraform actually outputs or uses
+                AKS_RG="$(az group list --query "[?contains(name,'aks')].name | [0]" -o tsv || echo 'REPLACE_RG')"
+                AKS_CLUSTER_NAME=$(terraform output -raw aks_cluster_name || echo "REPLACE_AKS_NAME")
+                # Fallback: you can fetch resource group/cluster names from pipeline variables if terraform output usage differs
+
+                # Get kubeconfig
+                az aks get-credentials -g "$AKS_RG" -n "$AKS_CLUSTER_NAME" --file $(Pipeline.Workspace)/kubeconfig --overwrite-existing
+                echo "##vso[task.setvariable variable=KUBECONFIG;isSecret=true]$(Pipeline.Workspace)/kubeconfig"
+
+# ---------------------------
+# Stage 3: Deploy to QA (with approval)
+# ---------------------------
+- stage: DeployQA
+  displayName: '🧪 Deploy to QA'
+  dependsOn: DeployDev
+  condition: succeeded()
+  jobs:
+  - deployment: DeployQAAKS
+    displayName: 'Deploy QA AKS Cluster'
+    environment:
+      name: 'qa'   # configure pre-deployment approvals for this environment in Azure DevOps UI
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: 'terraform-plan-artifacts'
+
+          - task: TerraformInstaller@0
+            displayName: 'Install Terraform $(TERRAFORM_VERSION)'
+            inputs:
+              terraformVersion: '$(TERRAFORM_VERSION)'
+
+          - task: AzureKeyVault@1
+            displayName: 'Get secrets from Key Vault'
+            inputs:
+              azureSubscription: '$(SERVICE_CONNECTION)'
+              KeyVaultName: 'aks-keyvault-secrets'
+              SecretsFilter: 'aks-ssh-public-key'
+
+          - task: TerraformCLI@0
+            displayName: 'Terraform Init - QA'
+            inputs:
+              command: 'init'
+              workingDirectory: '$(Pipeline.Workspace)/$(TF_WORKDIR)'
+              backendType: 'azurerm'
+              backendServiceArm: '$(SERVICE_CONNECTION)'
+              backendAzureRmResourceGroupName: '$(BACKEND_RG)'
+              backendAzureRmStorageAccountName: '$(BACKEND_STORAGE)'
+              backendAzureRmContainerName: '$(BACKEND_CONTAINER)'
+              backendAzureRmKey: 'aks-$(QA_ENVIRONMENT).tfstate'
+
+          - task: TerraformCLI@0
+            displayName: 'Terraform Plan - QA'
+            inputs:
+              command: 'plan'
+              workingDirectory: '$(Pipeline.Workspace)/$(TF_WORKDIR)'
+              environmentServiceName: '$(SERVICE_CONNECTION)'
+              commandOptions: >-
+                -var="environment=$(QA_ENVIRONMENT)"
+                -var="cluster_name=aks-$(QA_ENVIRONMENT)-$(Build.BuildId)"
+                -out=tfplan.$(QA_ENVIRONMENT).binary
+
+          - task: TerraformCLI@0
+            displayName: 'Terraform Apply - QA'
+            inputs:
+              command: 'apply'
+              workingDirectory: '$(Pipeline.Workspace)/$(TF_WORKDIR)'
+              environmentServiceName: '$(SERVICE_CONNECTION)'
+              commandOptions: '-auto-approve tfplan.$(QA_ENVIRONMENT).binary'
+
+# ---------------------------
+# Stage 4: Integration Tests
+# ---------------------------
+- stage: IntegrationTests
+  displayName: '🧪 Integration Tests'
+  dependsOn: DeployQA
+  condition: succeeded()
+  jobs:
+  - job: RunAKSTests
+    displayName: 'Run AKS Cluster Tests'
+    steps:
+    - task: KubectlInstaller@0
+      displayName: 'Install kubectl'
+      inputs:
+        kubectlVersion: 'latest'
+
+    - task: Bash@3
+      displayName: 'Test Cluster Connectivity'
+      inputs:
+        targetType: 'inline'
+        script: |
+          set -e
+          KUBECONFIG_PATH=$(KUBECONFIG)
+          if [ -z "$KUBECONFIG_PATH" ]; then
+            echo "KUBECONFIG not found. Failing."
+            exit 1
+          fi
+          kubectl --kubeconfig $KUBECONFIG_PATH get nodes
+          kubectl --kubeconfig $KUBECONFIG_PATH cluster-info
+          echo "✅ AKS Cluster is operational"
+
+    - task: Bash@3
+      displayName: 'Run Basic Kubernetes Tests'
+      inputs:
+        targetType: 'inline'
+        script: |
+          KUBECONFIG_PATH=$(KUBECONFIG)
+          kubectl --kubeconfig $KUBECONFIG_PATH run test-pod --image=nginx:alpine --restart=Never
+          sleep 30
+          kubectl --kubeconfig $KUBECONFIG_PATH get pods
+          kubectl --kubeconfig $KUBECONFIG_PATH delete pod test-pod || true
+          echo "✅ Basic Kubernetes functionality verified"
