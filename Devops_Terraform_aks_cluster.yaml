@@ -60,15 +60,12 @@ stages:
             script: |
               mkdir -p $(Pipeline.Workspace)/ssh-keys
               ssh-keygen -t rsa -b 4096 -f $(Pipeline.Workspace)/ssh-keys/aks-ssh-key -N '' -C "aks-terraform-$(Build.BuildId)"
-              # Write public key to file for later use
-              cat $(Pipeline.Workspace)/ssh-keys/aks-ssh-key.pub > $(Pipeline.Workspace)/ssh-public-key.txt
-      
         
         - task: PublishBuildArtifacts@1
-          displayName: 'Publish SSH Private Key (Secure)'
+          displayName: 'Publish SSH Keys'
           inputs:
             PathtoPublish: '$(Pipeline.Workspace)/ssh-keys'
-            ArtifactName: 'ssh-private-key'
+            ArtifactName: 'ssh-keys'
             publishLocation: 'container'
 
         - task: PublishBuildArtifacts@1
@@ -80,11 +77,8 @@ stages:
 
     - job: ValidateTerraform
       displayName: 'Terraform Validation'
-      dependsOn: GenerateSSHKeys
       steps:
-        - download: current
-          artifact: 'terraform-manifests'
-
+        - checkout: self
         - task: TerraformInstaller@0
           displayName: 'Install Terraform $(TERRAFORM_VERSION)'
           inputs:
@@ -94,7 +88,7 @@ stages:
           displayName: 'Terraform Init'
           inputs:
             command: 'init'
-            workingDirectory: '$(Pipeline.Workspace)/terraform-manifests'
+            workingDirectory: '$(System.DefaultWorkingDirectory)/$(TF_WORKDIR)'
             backendType: 'azurerm'
             backendServiceArm: '$(SERVICE_CONNECTION)'
             backendAzureRmResourceGroupName: '$(BACKEND_RG)'
@@ -106,7 +100,7 @@ stages:
           displayName: 'Terraform Validate'
           inputs:
             command: 'validate'
-            workingDirectory: '$(Pipeline.Workspace)/terraform-manifests'
+            workingDirectory: '$(System.DefaultWorkingDirectory)/$(TF_WORKDIR)'
 
 # ---------------------------
 # Stage 2: Deploy to Dev
@@ -126,14 +120,13 @@ stages:
               - download: current
                 artifact: 'terraform-manifests'
               - download: current
-                artifact: 'ssh-private-key'
+                artifact: 'ssh-keys'
 
               - task: TerraformInstaller@0
                 displayName: 'Install Terraform $(TERRAFORM_VERSION)'
                 inputs:
                   terraformVersion: '$(TERRAFORM_VERSION)'
 
-              
               - task: TerraformCLI@0
                 displayName: 'Terraform Init - Dev'
                 inputs:
@@ -155,7 +148,7 @@ stages:
                   commandOptions: >-
                     -var="environment=$(DEV_ENVIRONMENT)"
                     -var="cluster_name=aks-$(DEV_ENVIRONMENT)-$(Build.BuildId)"
-                    -var="ssh_public_key=$(cat $(Pipeline.Workspace)/ssh-private-key/aks-ssh-key.pub)"
+                    -var="ssh_public_key=$(cat $(Pipeline.Workspace)/ssh-keys/aks-ssh-key.pub)"
                     -out=tfplan.$(DEV_ENVIRONMENT).tfplan
 
               - task: TerraformCLI@0
@@ -184,14 +177,13 @@ stages:
               - download: current
                 artifact: 'terraform-manifests'
               - download: current
-                artifact: 'ssh-private-key'
+                artifact: 'ssh-keys'
 
               - task: TerraformInstaller@0
                 displayName: 'Install Terraform $(TERRAFORM_VERSION)'
                 inputs:
                   terraformVersion: '$(TERRAFORM_VERSION)'
 
-              
               - task: TerraformCLI@0
                 displayName: 'Terraform Init - QA'
                 inputs:
@@ -213,7 +205,7 @@ stages:
                   commandOptions: >-
                     -var="environment=$(QA_ENVIRONMENT)"
                     -var="cluster_name=aks-$(QA_ENVIRONMENT)-$(Build.BuildId)"
-                    -var="ssh_public_key=$(SSH_PUBLIC_KEY_CONTENT)"
+                    -var="ssh_public_key=$(cat $(Pipeline.Workspace)/ssh-keys/aks-ssh-key.pub)"
                     -out=tfplan.$(QA_ENVIRONMENT).tfplan
 
               - task: TerraformCLI@0
@@ -242,14 +234,13 @@ stages:
               - download: current
                 artifact: 'terraform-manifests'
               - download: current
-                artifact: 'ssh-private-key'
+                artifact: 'ssh-keys'
 
               - task: TerraformInstaller@0
                 displayName: 'Install Terraform $(TERRAFORM_VERSION)'
                 inputs:
                   terraformVersion: '$(TERRAFORM_VERSION)'
 
-              
               - task: TerraformCLI@0
                 displayName: 'Terraform Init - Prod'
                 inputs:
@@ -271,7 +262,7 @@ stages:
                   commandOptions: >-
                     -var="environment=$(PROD_ENVIRONMENT)"
                     -var="cluster_name=aks-$(PROD_ENVIRONMENT)-$(Build.BuildId)"
-                    -var="ssh_public_key=$(SSH_PUBLIC_KEY_CONTENT)"
+                    -var="ssh_public_key=$(cat $(Pipeline.Workspace)/ssh-keys/aks-ssh-key.pub)"
                     -out=tfplan.$(PROD_ENVIRONMENT).tfplan
 
               - task: TerraformCLI@0
