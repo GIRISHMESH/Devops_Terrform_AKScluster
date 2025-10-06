@@ -16,10 +16,13 @@ variable "environment" {
   default     = "dev"
 }
 
+
 variable "ssh_public_key" {
-  description = "SSH Public Key for Linux nodes"  
-  default     = "~/.ssh/aks-prod-sshkeys-terraform/aksprodsshkey.pub"
+  description = "SSH Public Key for Linux nodes"
+  type        = string
 }
+
+
 
 variable "windows_admin_username" {
   type        = string
@@ -32,4 +35,5 @@ variable "windows_admin_password" {
   description = "Windows admin password (recommend Key Vault in production)"  
   default     = "P@ssw0rd1234"
 }
+
 
