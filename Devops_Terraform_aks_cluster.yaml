@@ -253,6 +253,14 @@ stages:
                   backendAzureRmContainerName: '$(BACKEND_CONTAINER)'
                   backendAzureRmKey: 'aks-$(PROD_ENVIRONMENT).tfstate'
 
+              - task: Bash@3
+                name: ReadSSHKey
+                displayName: 'Read SSH Public Key Content'
+                inputs:
+                  targetType: 'inline'
+                  script: |
+                    echo "##vso[task.setvariable variable=SSH_PUBLIC_KEY_CONTENT]$(cat $(Pipeline.Workspace)/ssh-keys/aks-ssh-key.pub)"
+
               - task: TerraformCLI@0
                 displayName: 'Terraform Plan - Prod'
                 inputs:
@@ -262,7 +270,7 @@ stages:
                   commandOptions: >-
                     -var="environment=$(PROD_ENVIRONMENT)"
                     -var="cluster_name=aks-$(PROD_ENVIRONMENT)-$(Build.BuildId)"
-                    -var="ssh_public_key=$(cat $(Pipeline.Workspace)/ssh-keys/aks-ssh-key.pub)"
+                    -var="ssh_public_key=$(SSH_PUBLIC_KEY_CONTENT)"
                     -out=tfplan.$(PROD_ENVIRONMENT).tfplan
 
               - task: TerraformCLI@0
