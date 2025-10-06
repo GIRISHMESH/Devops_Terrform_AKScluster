@@ -133,14 +133,7 @@ stages:
                 inputs:
                   terraformVersion: '$(TERRAFORM_VERSION)'
 
-              - task: Bash@3
-                displayName: 'Read SSH Public Key'
-                inputs:
-                  targetType: 'inline'
-                  script: |
-                    SSH_KEY_CONTENT=$(cat $(Pipeline.Workspace)/ssh-private-key/aks-ssh-key.pub)
-                    echo "##vso[task.setvariable variable=SSH_PUBLIC_KEY_CONTENT;isOutput=true]$SSH_KEY_CONTENT"
-
+              
               - task: TerraformCLI@0
                 displayName: 'Terraform Init - Dev'
                 inputs:
@@ -198,14 +191,7 @@ stages:
                 inputs:
                   terraformVersion: '$(TERRAFORM_VERSION)'
 
-              - task: Bash@3
-                displayName: 'Read SSH Public Key'
-                inputs:
-                  targetType: 'inline'
-                  script: |
-                    SSH_KEY_CONTENT=$(cat $(Pipeline.Workspace)/ssh-private-key/aks-ssh-key.pub)
-                    echo "##vso[task.setvariable variable=SSH_PUBLIC_KEY_CONTENT;isOutput=true]$SSH_KEY_CONTENT"
-
+              
               - task: TerraformCLI@0
                 displayName: 'Terraform Init - QA'
                 inputs:
@@ -263,14 +249,7 @@ stages:
                 inputs:
                   terraformVersion: '$(TERRAFORM_VERSION)'
 
-              - task: Bash@3
-                displayName: 'Read SSH Public Key'
-                inputs:
-                  targetType: 'inline'
-                  script: |
-                    SSH_KEY_CONTENT=$(cat $(Pipeline.Workspace)/ssh-private-key/aks-ssh-key.pub)
-                    echo "##vso[task.setvariable variable=SSH_PUBLIC_KEY_CONTENT;isOutput=true]$SSH_KEY_CONTENT"
-
+              
               - task: TerraformCLI@0
                 displayName: 'Terraform Init - Prod'
                 inputs:
@@ -302,4 +281,3 @@ stages:
                   workingDirectory: '$(Pipeline.Workspace)/terraform-manifests'
                   environmentServiceName: '$(SERVICE_CONNECTION)'
                   commandOptions: '-auto-approve tfplan.$(PROD_ENVIRONMENT).tfplan'
-
