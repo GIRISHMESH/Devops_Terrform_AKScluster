@@ -20,24 +20,15 @@ pool:
   vmImage: 'ubuntu-latest'
 
 variables:
-  - name: SERVICE_CONNECTION
-    value: 'terraform-aks-azurerm-svc-con'
-  - name: TERRAFORM_VERSION
-    value: '1.7.4'
-  - name: BACKEND_RG
-    value: 'terraform-storage-rg'
-  - name: BACKEND_STORAGE
-    value: 'terraformstatexlrwdrzs'
-  - name: BACKEND_CONTAINER
-    value: 'tfstatefiles'
-  - name: DEV_ENVIRONMENT
-    value: 'dev'
-  - name: QA_ENVIRONMENT
-    value: 'qa'
-  - name: PROD_ENVIRONMENT
-    value: 'prod'
-  - name: TF_WORKDIR
-    value: 'terraform-manifests'
+  SERVICE_CONNECTION: 'terraform-aks-azurerm-svc-con'
+  TERRAFORM_VERSION: '1.7.4'
+  BACKEND_RG: 'terraform-storage-rg'
+  BACKEND_STORAGE: 'terraformstatexlrwdrzs'
+  BACKEND_CONTAINER: 'tfstatefiles'
+  DEV_ENVIRONMENT: 'dev'
+  QA_ENVIRONMENT: 'qa'
+  PROD_ENVIRONMENT: 'prod'
+  TF_WORKDIR: 'terraform-manifests'
 
 stages:
 
@@ -52,7 +43,7 @@ stages:
       steps:
         - checkout: self
 
-        # Generate SSH Key Pair
+        # Generate SSH key pair
         - task: Bash@3
           displayName: 'Generate SSH Key Pair'
           inputs:
@@ -61,13 +52,11 @@ stages:
               mkdir -p $(Pipeline.Workspace)/ssh-keys
               ssh-keygen -t rsa -b 4096 -f $(Pipeline.Workspace)/ssh-keys/aks-ssh-key -N '' -C "aks-terraform-$(Build.BuildId)"
               echo "##vso[task.setvariable variable=SSH_PUBLIC_KEY;isOutput=true]$(cat $(Pipeline.Workspace)/ssh-keys/aks-ssh-key.pub)"
-              echo "SSH Public Key generated:"
-              cat $(Pipeline.Workspace)/ssh-keys/aks-ssh-key.pub
-
+        
         - task: PublishBuildArtifacts@1
           displayName: 'Publish SSH Private Key (Secure)'
           inputs:
-            PathtoPublish: '$(Pipeline.Workspace)/ssh-keys/aks-ssh-key'
+            PathtoPublish: '$(Pipeline.Workspace)/ssh-keys'
             ArtifactName: 'ssh-private-key'
             publishLocation: 'container'
 
@@ -133,13 +122,13 @@ stages:
                 inputs:
                   terraformVersion: '$(TERRAFORM_VERSION)'
 
-              # Extract SSH public key from private key
               - task: Bash@3
-                displayName: 'Extract SSH Public Key'
+                displayName: 'Read SSH Public Key'
                 inputs:
                   targetType: 'inline'
                   script: |
-                    ssh-keygen -y -f $(Pipeline.Workspace)/ssh-private-key/aks-ssh-key > $(Pipeline.Workspace)/ssh-private-key/aks-ssh-key.pub
+                    SSH_KEY_CONTENT=$(cat $(Pipeline.Workspace)/ssh-private-key/aks-ssh-key.pub)
+                    echo "##vso[task.setvariable variable=SSH_PUBLIC_KEY_CONTENT;isOutput=true]$SSH_KEY_CONTENT"
 
               - task: TerraformCLI@0
                 displayName: 'Terraform Init - Dev'
@@ -162,7 +151,7 @@ stages:
                   commandOptions: >-
                     -var="environment=$(DEV_ENVIRONMENT)"
                     -var="cluster_name=aks-$(DEV_ENVIRONMENT)-$(Build.BuildId)"
-                    -var="ssh_public_key=$(Pipeline.Workspace)/ssh-private-key/aks-ssh-key.pub"
+                    -var="ssh_public_key=$(SSH_PUBLIC_KEY_CONTENT)"
                     -out=tfplan.$(DEV_ENVIRONMENT).tfplan
 
               - task: TerraformCLI@0
@@ -199,11 +188,12 @@ stages:
                   terraformVersion: '$(TERRAFORM_VERSION)'
 
               - task: Bash@3
-                displayName: 'Extract SSH Public Key'
+                displayName: 'Read SSH Public Key'
                 inputs:
                   targetType: 'inline'
                   script: |
-                    ssh-keygen -y -f $(Pipeline.Workspace)/ssh-private-key/aks-ssh-key > $(Pipeline.Workspace)/ssh-private-key/aks-ssh-key.pub
+                    SSH_KEY_CONTENT=$(cat $(Pipeline.Workspace)/ssh-private-key/aks-ssh-key.pub)
+                    echo "##vso[task.setvariable variable=SSH_PUBLIC_KEY_CONTENT;isOutput=true]$SSH_KEY_CONTENT"
 
               - task: TerraformCLI@0
                 displayName: 'Terraform Init - QA'
@@ -226,7 +216,7 @@ stages:
                   commandOptions: >-
                     -var="environment=$(QA_ENVIRONMENT)"
                     -var="cluster_name=aks-$(QA_ENVIRONMENT)-$(Build.BuildId)"
-                    -var="ssh_public_key=$(Pipeline.Workspace)/ssh-private-key/aks-ssh-key.pub"
+                    -var="ssh_public_key=$(SSH_PUBLIC_KEY_CONTENT)"
                     -out=tfplan.$(QA_ENVIRONMENT).tfplan
 
               - task: TerraformCLI@0
@@ -263,11 +253,12 @@ stages:
                   terraformVersion: '$(TERRAFORM_VERSION)'
 
               - task: Bash@3
-                displayName: 'Extract SSH Public Key'
+                displayName: 'Read SSH Public Key'
                 inputs:
                   targetType: 'inline'
                   script: |
-                    ssh-keygen -y -f $(Pipeline.Workspace)/ssh-private-key/aks-ssh-key > $(Pipeline.Workspace)/ssh-private-key/aks-ssh-key.pub
+                    SSH_KEY_CONTENT=$(cat $(Pipeline.Workspace)/ssh-private-key/aks-ssh-key.pub)
+                    echo "##vso[task.setvariable variable=SSH_PUBLIC_KEY_CONTENT;isOutput=true]$SSH_KEY_CONTENT"
 
               - task: TerraformCLI@0
                 displayName: 'Terraform Init - Prod'
@@ -290,7 +281,7 @@ stages:
                   commandOptions: >-
                     -var="environment=$(PROD_ENVIRONMENT)"
                     -var="cluster_name=aks-$(PROD_ENVIRONMENT)-$(Build.BuildId)"
-                    -var="ssh_public_key=$(Pipeline.Workspace)/ssh-private-key/aks-ssh-key.pub"
+                    -var="ssh_public_key=$(SSH_PUBLIC_KEY_CONTENT)"
                     -out=tfplan.$(PROD_ENVIRONMENT).tfplan
 
               - task: TerraformCLI@0
