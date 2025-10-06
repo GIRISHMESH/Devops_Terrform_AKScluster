@@ -96,6 +96,15 @@ stages:
             backendAzureRmContainerName: '$(BACKEND_CONTAINER)'
             backendAzureRmKey: 'validation-aks.tfstate'
 
+
+        - task: Bash@3
+                name: ReadSSHKey
+                displayName: 'Read SSH Public Key Content'
+                inputs:
+                  targetType: 'inline'
+                  script: |
+                    echo "##vso[task.setvariable variable=SSH_PUBLIC_KEY_CONTENT]$(cat $(Pipeline.Workspace)/ssh-keys/aks-ssh-key.pub)"
+
         - task: TerraformCLI@0
           displayName: 'Terraform Validate'
           inputs:
@@ -138,6 +147,14 @@ stages:
                   backendAzureRmStorageAccountName: '$(BACKEND_STORAGE)'
                   backendAzureRmContainerName: '$(BACKEND_CONTAINER)'
                   backendAzureRmKey: 'aks-$(DEV_ENVIRONMENT).tfstate'
+
+              - task: Bash@3
+                name: ReadSSHKey
+                displayName: 'Read SSH Public Key Content'
+                inputs:
+                  targetType: 'inline'
+                  script: |
+                    echo "##vso[task.setvariable variable=SSH_PUBLIC_KEY_CONTENT]$(cat $(Pipeline.Workspace)/ssh-keys/aks-ssh-key.pub)"
 
               - task: TerraformCLI@0
                 displayName: 'Terraform Plan - Dev'
@@ -195,6 +212,14 @@ stages:
                   backendAzureRmStorageAccountName: '$(BACKEND_STORAGE)'
                   backendAzureRmContainerName: '$(BACKEND_CONTAINER)'
                   backendAzureRmKey: 'aks-$(QA_ENVIRONMENT).tfstate'
+
+              - task: Bash@3
+                name: ReadSSHKey
+                displayName: 'Read SSH Public Key Content'
+                inputs:
+                  targetType: 'inline'
+                  script: |
+                    echo "##vso[task.setvariable variable=SSH_PUBLIC_KEY_CONTENT]$(cat $(Pipeline.Workspace)/ssh-keys/aks-ssh-key.pub)"
 
               - task: TerraformCLI@0
                 displayName: 'Terraform Plan - QA'
@@ -280,3 +305,4 @@ stages:
                   workingDirectory: '$(Pipeline.Workspace)/terraform-manifests'
                   environmentServiceName: '$(SERVICE_CONNECTION)'
                   commandOptions: '-auto-approve tfplan.$(PROD_ENVIRONMENT).tfplan'
+
