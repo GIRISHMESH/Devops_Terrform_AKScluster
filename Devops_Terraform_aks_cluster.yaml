@@ -103,7 +103,7 @@ stages:
             workingDirectory: '$(System.DefaultWorkingDirectory)/$(TF_WORKDIR)'
 
 # ---------------------------
-# Stage 2: Deploy to Dev
+# Stage 2: Deploy to Dev|here $(System.DefaultWorkingDirectory  to  $(Pipeline.Workspace) → used after downloading artifacts (shared artifact workspace)for DeployDev, DeployQA, and DeployProd stages.
 # ---------------------------
 - stage: DeployDev
   displayName: '🚀 Deploy to Development'
@@ -296,3 +296,4 @@ stages:
                   workingDirectory: '$(Pipeline.Workspace)/terraform-manifests'
                   environmentServiceName: '$(SERVICE_CONNECTION)'
                   commandOptions: '-auto-approve tfplan.$(PROD_ENVIRONMENT).tfplan'
+
