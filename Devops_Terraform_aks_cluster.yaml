@@ -96,6 +96,8 @@ stages:
             backendAzureRmContainerName: '$(BACKEND_CONTAINER)'
             backendAzureRmKey: 'validation-aks.tfstate'
 
+
+###Check syntax & configuration correctness  , purpose:Fail fast if config is broken
         - task: TerraformCLI@0
           displayName: 'Terraform Validate'
           inputs:
@@ -296,4 +298,5 @@ stages:
                   workingDirectory: '$(Pipeline.Workspace)/terraform-manifests'
                   environmentServiceName: '$(SERVICE_CONNECTION)'
                   commandOptions: '-auto-approve tfplan.$(PROD_ENVIRONMENT).tfplan'
+
 
