@@ -71,6 +71,9 @@ linux_profile {
     }
   }
 
+
+
+#### One  group  created in the  AAD  and  mapped  to  AKS  cluster  for  ADMIN  control  on theat  group  further  new  users  added  to that  group  will get the  admin access.
   role_based_access_control {
     enabled = true
     azure_active_directory {
@@ -95,5 +98,6 @@ linux_profile {
     CostCenter   = "IT-Platform"
   }
 }
+
 
 
